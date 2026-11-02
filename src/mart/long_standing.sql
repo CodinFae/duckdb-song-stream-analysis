@@ -21,7 +21,8 @@ track_stats AS (
         COUNT(DISTINCT CAST(timestamp AS DATE)) AS active_days,
         COUNT(*) AS total_plays
     FROM stg_music_play
-    GROUP BY track
+    WHERE count_as_play == true
+    GROUP BY track_id, track
 )
 SELECT
     track,
@@ -37,33 +38,11 @@ SELECT
 
 FROM track_stats CROSS JOIN dataset_stats d;
 
-SELECT
-    track,
-    longevity_score: robust_scaler(
-        longevity,
-        q25_longevity,
-        q50_longevity,
-        q75_longevity),
-    longevity,
-    active_day_score:robust_scaler(
-        active_days,
-        q25_active_days,
-        q50_active_days,
-        q75_active_days),
-    active_days,
-    -- TODO: This score should be 0 when the time_since is 0
-    time_since_plays_score: 1-robust_scaler(
-        time_since_plays,
-        q25_time_since_plays,
-        q50_time_since_plays,
-        q75_time_since_plays
-    ),
-    time_since_plays,
-    score: (0.2 * longevity_score + 0.6*active_day_score + 0.2*time_since_plays_score)
-FROM int_long_standing,
-scaling_params(
-    'int_long_standing',
-    ['longevity', 'active_days', 'time_since_plays']
-)
-ORDER BY score DESC
-LIMIT 20;
+
+CREATE OR REPLACE TABLE mart_long_standing AS
+SELECT *,
+    percent_rank() OVER (ORDER BY longevity) as longevity_score,
+    percent_rank() OVER (ORDER BY active_days) as active_days_score,
+    exp(-ln(2)*time_since_plays/90) AS  recency_score,
+    0.2*longevity_score+0.6*active_days_score+0.2*recency_score as score
+FROM int_long_standing
