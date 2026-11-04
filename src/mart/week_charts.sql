@@ -12,8 +12,12 @@ WITH weekly_track_count AS (
         -- => TODO: Do a tie-breaker based on listened time?
         RANK() OVER (
             PARTITION BY week_start
-            order by total_week_song DESC) AS hit_chart,
-    FROM stg_music_play GROUP BY week_start, track_id, track),
+            order by total_week_song DESC) AS hit_chart
+
+        FROM stg_music_play
+        WHERE count_as_play = true
+        GROUP BY week_start, track_id, track
+    ),
 max_week_hit AS (
     -- With this, we allow to filter by the actual highest value of the hit track. So a week where all songs are played once will have a max hit of 1
     -- meaning it is very low value to know,
