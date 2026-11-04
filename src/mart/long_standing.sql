@@ -19,6 +19,7 @@ track_stats AS (
         MIN(timestamp) AS first_play,
         MAX(timestamp) AS last_play,
         COUNT(DISTINCT CAST(timestamp AS DATE)) AS active_days,
+        COUNT(DISTINCT date_trunc('month', timestamp)) AS monthly_loyalty,
         COUNT(*) AS total_plays
     FROM stg_music_play
     WHERE count_as_play == true
@@ -33,6 +34,8 @@ SELECT
     -- Active Days: How many distinct days was this song listened to. The more there are, the more they are importante
     active_days,
 
+    monthly_loyalty,
+
     -- Time since last plays: The older the last play of a song, the less significant it is.
     date_diff('day', last_play, last_date) AS time_since_plays
 
@@ -43,6 +46,7 @@ CREATE OR REPLACE TABLE mart_long_standing AS
 SELECT *,
     percent_rank() OVER (ORDER BY longevity) as longevity_score,
     percent_rank() OVER (ORDER BY active_days) as active_days_score,
+    percent_rank() OVER (ORDER BY monthly_loyalty) as monthly_loyalty_score,
     exp(-ln(2)*time_since_plays/90) AS  recency_score,
-    0.2*longevity_score+0.6*active_days_score+0.2*recency_score as score
+    0.2*longevity_score+0.2*active_days_score+0.4*monthly_loyalty_score+0.2*recency_score as score
 FROM int_long_standing
