@@ -15,7 +15,12 @@ track_stats AS (
     SELECT
         track_id,
         track,
-        COUNT(*) AS total_plays
+        COUNT(*) AS total_plays,
+        DATE_DIFF(
+            'day',
+            MIN(timestamp),
+            MAX(timestamp)
+        ) + 1 AS song_lifetime
     FROM stg_music_play
     WHERE count_as_play = true
     GROUP BY track_id, track
@@ -54,7 +59,7 @@ SELECT
     track_stats.track_id,
     track_stats.track,
 
-    -- Average plays per day
+    -- Average plays per day (should use song_lifetime but it favors way too much songs listened for a day)
     total_plays * 1.0 / spanning_days AS frequency,
 
     -- Number of weeks ranked #1
@@ -92,8 +97,8 @@ LEFT JOIN peak_stats
 
     SELECT
         *,
-        0.3 * frequency_score
-        + 0.4 * weeks_score
+        0.1 * frequency_score
+        + 0.6 * weeks_score
         + 0.3 * peak_score AS score
 
     FROM scores;
