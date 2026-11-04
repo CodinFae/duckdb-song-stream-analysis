@@ -14,7 +14,6 @@ WITH track_stats AS (
         ) AS skipped_plays
 
     FROM stg_music_play
-    WHERE count_as_play = true
     GROUP BY track_id, track
 ),
 
