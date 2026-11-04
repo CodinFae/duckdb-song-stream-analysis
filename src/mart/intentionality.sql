@@ -6,7 +6,7 @@ WITH track_stats AS (
         COUNT(*) AS total_plays,
 
         COUNT(*) FILTER (
-            WHERE reason_start IN ('clickrow', 'playbtn')
+            WHERE reason_start IN ('clickrow', 'playbtn','backbtn')
         ) AS selected_plays,
 
         COUNT(*) FILTER (
