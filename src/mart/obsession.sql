@@ -31,11 +31,9 @@ track_stats AS (
 chart_stats AS (
     SELECT
         song_id,
-        COUNT(*) FILTER (
-            WHERE hit_chart = 1
-        ) AS weeks_as_number_one
+        -- Tied #1s share the week, and weeks whose #1 has < 5 plays don't count
+        SUM(number_one_credit) AS weeks_as_number_one
     FROM int_week_charts
-    WHERE max_hit >= 10
     GROUP BY song_id
 ),
 
@@ -78,7 +76,7 @@ LEFT JOIN chart_stats
 LEFT JOIN peak_stats
     ON peak_stats.song_id = track_stats.song_id
 WHERE total_plays >= 10 -- The song has been played at least 10 times
-AND weeks_as_number_one >= 1 -- It has been first at least once
+AND weeks_as_number_one > 0 -- It has been #1 (possibly shared) at least once
 ;
 
 .print mart_obsession
@@ -113,7 +111,7 @@ AND weeks_as_number_one >= 1 -- It has been first at least once
     -- Reporting
     SELECT title, artist,
         format('{0} ({1:2f})', frequency, frequency_score) as frequency,
-        format('{0} ({1:2f})', weeks_as_number_one, weeks_score) as weeks_as_one,
+        format('{0:.2f} ({1:2f})', weeks_as_number_one, weeks_score) as weeks_as_one,
         format('{0} ({1:2f})', peak_weekly_plays, peak_score) as peak,
 
         score

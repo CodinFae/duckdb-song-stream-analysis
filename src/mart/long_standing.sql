@@ -35,10 +35,15 @@ SELECT
     -- and last. A song that has a high longevity is a song that either has been rediscovered or that is often there
     date_diff('day', first_play, last_play) + 1 AS longevity, -- date_diff returns 0 if a song has been started and stop in a day,
 
-    -- Active Days: How many distinct days was this song listened to. The more there are, the more they are importante
+    -- Active Days: How many distinct days was this song listened to. The more there are, the more they are important
     active_days,
 
     monthly_loyalty,
+
+    -- Loyalty rate: share of the months of the song's life (first -> last play) in which it was played.
+    -- Relative, so a song discovered recently can compete with one known for years.
+    date_diff('month', first_play, last_play) + 1 AS lifetime_months,
+    monthly_loyalty / lifetime_months AS loyalty_rate,
 
     -- Time since last plays: The older the last play of a song, the less significant it is.
     date_diff('day', last_play, last_date) AS time_since_plays
@@ -50,19 +55,19 @@ CREATE OR REPLACE TABLE mart_long_standing AS
 SELECT *,
     percent_rank() OVER (ORDER BY longevity) as longevity_score,
     percent_rank() OVER (ORDER BY active_days) as active_days_score,
-    percent_rank() OVER (ORDER BY monthly_loyalty) as monthly_loyalty_score,
+    percent_rank() OVER (ORDER BY loyalty_rate) as loyalty_score,
     exp(-ln(2)*time_since_plays/90) AS  recency_score,
-    0.2*longevity_score+0.2*active_days_score+0.4*monthly_loyalty_score+0.2*recency_score as score
+    0.2*longevity_score+0.2*active_days_score+0.4*loyalty_score+0.2*recency_score as score
 FROM int_long_standing
-WHERE time_since_plays < 365 -- No need to spend time on a song never listened to in a year
-AND active_days >= 7 -- Songs need to have been listened of 7 different days to count as long_standing
+-- "In my life": no recency filter, old favourites stay (recency only weighs in the score)
+WHERE active_days >= 7 -- Songs need to have been listened of 7 different days to count as long_standing
 ;
 
 -- Reporting
 SELECT title, artist,
     format('{0} ({1:2f})', longevity, longevity_score) as longevity,
     format('{0} ({1:2f})', active_days, active_days_score) as active_days,
-    format('{0} ({1:2f})', monthly_loyalty, monthly_loyalty_score) as active_months,
+    format('{0}/{1} ({2:2f})', monthly_loyalty, lifetime_months, loyalty_score) as active_months,
     format('{0} ({1:2f})', time_since_plays, recency_score) as days_since_plays,
     score
 FROM mart_long_standing

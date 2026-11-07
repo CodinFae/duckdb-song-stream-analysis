@@ -1,5 +1,9 @@
-
--- TODO: Add a "is valid week?" where if a week doesn't have a top 10, we ignore it?
+-- Weekly charts
+-- Rank songs by number of plays in each calendar week, like a personal top chart.
+-- Ties share the same rank (RANK): a week where 24 songs are played twice has 24 songs at #1.
+-- To keep #1 meaningful:
+--   * is_valid_week: the #1 of the week must have at least 5 plays
+--   * number_one_credit: tied #1s share one week of credit (1 / tied songs)
 
 .print int_week_charts
 CREATE OR REPLACE TABLE int_week_charts AS
@@ -9,29 +13,38 @@ WITH weekly_track_count AS (
         song_id,
         title,
         song_artist AS artist,
-        COUNT(*) as total_week_song,
-        -- Rank instead of dense_rank heavily punish songs are not sufficiently different in the week.
-        -- => TODO: Do a tie-breaker based on listened time?
+        COUNT(*) AS total_week_song,
         RANK() OVER (
             PARTITION BY week_start
-            order by total_week_song DESC) AS hit_chart
+            ORDER BY total_week_song DESC
+        ) AS hit_chart
+    FROM int_music_play
+    WHERE count_as_play = true
+    GROUP BY week_start, song_id, title, song_artist
+),
 
-        FROM int_music_play
-        WHERE count_as_play = true
-        GROUP BY week_start, song_id, title, song_artist
-    ),
-max_week_hit AS (
-    -- With this, we allow to filter by the actual highest value of the hit track. So a week where all songs are played once will have a max hit of 1
-    -- meaning it is very low value to know,
-    SELECT week_start, MAX(hit_chart) as max_hit FROM weekly_track_count GROUP BY week_start)
+week_stats AS (
+    SELECT
+        week_start,
+        MAX(total_week_song) AS top_plays,
+        COUNT(*) FILTER (WHERE hit_chart = 1) AS tied_number_one
+    FROM weekly_track_count
+    GROUP BY week_start
+)
 
 SELECT
-    weekly_track_count.week_start,
+    w.week_start,
     song_id,
     title,
     artist,
     total_week_song,
     hit_chart,
-    h.max_hit AS max_hit
-    FROM weekly_track_count
-    INNER JOIN max_week_hit h ON h.week_start == weekly_track_count.week_start;
+    s.top_plays,
+    s.tied_number_one,
+    s.top_plays >= 5 AS is_valid_week,
+    CASE
+        WHEN hit_chart = 1 AND s.top_plays >= 5 THEN 1.0 / s.tied_number_one
+        ELSE 0
+    END AS number_one_credit
+FROM weekly_track_count w
+INNER JOIN week_stats s ON s.week_start = w.week_start;
