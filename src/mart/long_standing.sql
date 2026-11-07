@@ -12,21 +12,25 @@ dataset_stats AS (
         MIN(timestamp) AS first_date,
         MAX(timestamp) as last_date,
         date_diff('day', first_date, last_date) + 1 AS spanning_days
-        FROM stg_music_play),
+        FROM int_music_play),
 track_stats AS (
     SELECT
-        track,
+        song_id,
+        title,
+        song_artist AS artist,
         MIN(timestamp) AS first_play,
         MAX(timestamp) AS last_play,
         COUNT(DISTINCT CAST(timestamp AS DATE)) AS active_days,
         COUNT(DISTINCT date_trunc('month', timestamp)) AS monthly_loyalty,
         COUNT(*) AS total_plays
-    FROM stg_music_play
+    FROM int_music_play
     WHERE count_as_play == true
-    GROUP BY track_id, track
+    GROUP BY song_id, title, song_artist
 )
 SELECT
-    track,
+    song_id,
+    title,
+    artist,
     -- Longevity: What's the total spanning of the song, i.e. is there a large number of days between first listening
     -- and last. A song that has a high longevity is a song that either has been rediscovered or that is often there
     date_diff('day', first_play, last_play) + 1 AS longevity, -- date_diff returns 0 if a song has been started and stop in a day,
@@ -55,7 +59,7 @@ AND active_days >= 7 -- Songs need to have been listened of 7 different days to 
 ;
 
 -- Reporting
-SELECT track,
+SELECT title, artist,
     format('{0} ({1:2f})', longevity, longevity_score) as longevity,
     format('{0} ({1:2f})', active_days, active_days_score) as active_days,
     format('{0} ({1:2f})', monthly_loyalty, monthly_loyalty_score) as active_months,

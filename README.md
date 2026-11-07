@@ -29,6 +29,7 @@ just lint     # lint SQL with sqruff (`just fmt` to auto-fix)
 |-------|------|---------|
 | `raw_` | `src/raw.sql` | JSON export loaded as-is |
 | `stg_` | `src/stg.sql` | One row per song play, renamed columns, podcasts removed. A play "counts" above 30s |
+| `int_song` | `src/int_song.sql` | Song identity: one `song_id` per (artist, title), merging releases, remasters, edits and `feat.`. Covers stay separate. Artist aliases in `seeds/artist_aliases.csv` |
 | `int_` / `mart_` | `src/mart/*.sql` | Per-track metrics, then percentile-based scores (0–1) |
 
 ## Marts

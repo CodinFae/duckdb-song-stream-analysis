@@ -2,8 +2,9 @@
 CREATE OR REPLACE TABLE int_intentionality AS
 WITH track_stats AS (
     SELECT
-        track_id,
-        track,
+        song_id,
+        title,
+        song_artist AS artist,
         COUNT(*) AS total_plays,
 
         COUNT(*) FILTER (
@@ -14,8 +15,8 @@ WITH track_stats AS (
             WHERE reason_end = 'fwdbtn'
         ) AS skipped_plays
 
-    FROM stg_music_play
-    GROUP BY track_id, track
+    FROM int_music_play
+    GROUP BY song_id, title, song_artist
 ),
 
 global_stats AS (
@@ -62,7 +63,7 @@ FROM scores;
 
 
 -- Reporting
-SELECT track,
+SELECT title, artist,
     format('{0} ({1:2f})', selected_rate, selected_score) as selected_rate,
     format('{0} ({1:2f})', clicked_off_rate, not_skipped_score) as clicked_off_rate,
     score
