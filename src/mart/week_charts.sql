@@ -1,6 +1,7 @@
 
 -- TODO: Add a "is valid week?" where if a week doesn't have a top 10, we ignore it?
 
+.print int_week_charts
 CREATE OR REPLACE TABLE int_week_charts AS
 WITH weekly_track_count AS (
     SELECT

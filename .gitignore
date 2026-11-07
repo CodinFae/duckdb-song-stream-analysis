@@ -1,1 +1,4 @@
 data
+*.duckdb
+*.duckdb.wal
+__marimo__

@@ -1,3 +1,4 @@
+.print stg_music_play
 CREATE OR REPLACE TABLE stg_music_play AS
 SELECT
     md5(concat_ws('|',epoch_ms(ts) ,spotify_track_uri , ms_played)) as event_id,

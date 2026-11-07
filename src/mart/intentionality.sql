@@ -1,3 +1,4 @@
+.print int_intentionality
 CREATE OR REPLACE TABLE int_intentionality AS
 WITH track_stats AS (
     SELECT
@@ -39,6 +40,7 @@ SELECT
 FROM track_stats t
 CROSS JOIN global_stats g;
 
+.print mart_intentionality
 CREATE OR REPLACE TABLE mart_intentionality AS
 WITH scores AS (
     SELECT
@@ -57,3 +59,12 @@ SELECT
     0.8 * selected_score
     + 0.2 * not_skipped_score AS score
 FROM scores;
+
+
+-- Reporting
+SELECT track,
+    format('{0} ({1:2f})', selected_rate, selected_score) as selected_rate,
+    format('{0} ({1:2f})', clicked_off_rate, not_skipped_score) as clicked_off_rate,
+    score
+FROM mart_intentionality
+ORDER BY score DESC LIMIT 20;

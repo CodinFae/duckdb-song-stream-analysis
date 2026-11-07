@@ -1,3 +1,4 @@
+.print int_obsession
 CREATE OR REPLACE TABLE int_obsession AS
 WITH dataset_stats AS (
     SELECT
@@ -59,8 +60,8 @@ SELECT
     track_stats.track_id,
     track_stats.track,
 
-    -- Average plays per day (should use song_lifetime but it favors way too much songs listened for a day)
-    total_plays * 1.0 / spanning_days AS frequency,
+    -- total_plays
+    total_plays AS frequency,
 
     -- Number of weeks ranked #1
     COALESCE(weeks_as_number_one, 0) AS weeks_as_number_one,
@@ -73,9 +74,12 @@ CROSS JOIN dataset_stats
 LEFT JOIN chart_stats
     ON chart_stats.track_id = track_stats.track_id
 LEFT JOIN peak_stats
-    ON peak_stats.track_id = track_stats.track_id;
+    ON peak_stats.track_id = track_stats.track_id
+WHERE total_plays >= 10 -- The song has been played at least 10 times
+AND weeks_as_number_one >= 1 -- It has been first at least once
+;
 
-
+.print mart_obsession
     CREATE OR REPLACE TABLE mart_obsession AS
     WITH scores AS (
         SELECT
@@ -102,3 +106,14 @@ LEFT JOIN peak_stats
         + 0.3 * peak_score AS score
 
     FROM scores;
+
+
+    -- Reporting
+    SELECT track,
+        format('{0} ({1:2f})', frequency, frequency_score) as frequency,
+        format('{0} ({1:2f})', weeks_as_number_one, weeks_score) as weeks_as_one,
+        format('{0} ({1:2f})', peak_weekly_plays, peak_score) as peak,
+
+        score
+    FROM mart_obsession
+    ORDER BY score DESC LIMIT 20;
