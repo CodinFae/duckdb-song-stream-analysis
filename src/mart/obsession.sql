@@ -3,8 +3,8 @@
 -- when I feel sad I listen to it in loops". Measured on the day, not on the long run
 -- (that's long_standing).
 -- Strict loops (same song twice in a row) are rare in the data: on loop means many plays
--- in the same day. A binge day is a day with at least 3 plays of the song.
--- A play inside an album session counts as half a play: binging a soundtrack still matters,
+-- in the same day. A binge day is a day with several plays of the song (see params.sql).
+-- A play inside an album session counts as part of a play: binging a soundtrack still matters,
 -- but it's partly a binge of the album, not of each of its tracks (see mart_album).
 --   * binge_days:   how many times the song was binged
 --   * binge_months: in how many different months, a refuge you come back to
@@ -19,7 +19,7 @@ daily AS (
         song_id,
         CAST(p.timestamp AS DATE) AS day,
         COUNT(*) AS raw_plays,
-        SUM(CASE WHEN a.event_id IS NULL THEN 1.0 ELSE 0.5 END)::DOUBLE AS plays
+        SUM(CASE WHEN a.event_id IS NULL THEN 1.0 ELSE getvariable('obsession_album_play_weight') END)::DOUBLE AS plays
     FROM int_music_play p
     LEFT JOIN int_album_play a USING (event_id)
     WHERE p.count_as_play = true
@@ -36,13 +36,13 @@ SELECT
     title,
     artist,
     SUM(raw_plays) AS total_plays,
-    COUNT(*) FILTER (WHERE plays >= 3) AS binge_days,
-    COUNT(DISTINCT date_trunc('month', day)) FILTER (WHERE plays >= 3) AS binge_months,
+    COUNT(*) FILTER (WHERE plays >= getvariable('obsession_binge_day_plays')) AS binge_days,
+    COUNT(DISTINCT date_trunc('month', day)) FILTER (WHERE plays >= getvariable('obsession_binge_day_plays')) AS binge_months,
     MAX(plays) AS max_day,
     -- Share of the song's plays that happened during binge days
-    SUM(raw_plays) FILTER (WHERE plays >= 3) / SUM(raw_plays) AS binge_share,
-    MIN(day) FILTER (WHERE plays >= 3) AS first_binge,
-    MAX(day) FILTER (WHERE plays >= 3) AS last_binge
+    SUM(raw_plays) FILTER (WHERE plays >= getvariable('obsession_binge_day_plays')) / SUM(raw_plays) AS binge_share,
+    MIN(day) FILTER (WHERE plays >= getvariable('obsession_binge_day_plays')) AS first_binge,
+    MAX(day) FILTER (WHERE plays >= getvariable('obsession_binge_day_plays')) AS last_binge
 FROM daily
 JOIN songs USING (song_id)
 GROUP BY song_id, title, artist;
@@ -56,22 +56,11 @@ WITH scores AS (
         PERCENT_RANK() OVER (ORDER BY binge_months) AS recurrence_score,
         PERCENT_RANK() OVER (ORDER BY max_day) AS intensity_score
     FROM int_obsession
-    WHERE binge_days >= 2 -- Binged at least twice
+    WHERE binge_days >= getvariable('obsession_min_binge_days')
 )
 SELECT
     *,
-    0.4 * binge_days_score
-    + 0.3 * recurrence_score
-    + 0.3 * intensity_score AS score
+    getvariable('obsession_weight_binge_days') * binge_days_score
+    + getvariable('obsession_weight_recurrence') * recurrence_score
+    + getvariable('obsession_weight_intensity') * intensity_score AS score
 FROM scores;
-
--- Reporting
-SELECT title, artist,
-    total_plays,
-    binge_days,
-    binge_months,
-    max_day,
-    round(binge_share, 2) AS binge_share,
-    round(score, 3) AS score
-FROM mart_obsession
-ORDER BY score DESC, binge_days DESC LIMIT 20;

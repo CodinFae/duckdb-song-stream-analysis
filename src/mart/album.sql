@@ -1,6 +1,6 @@
 -- Albums you live in
 -- Some music is listened to as a whole, by album (mostly soundtracks): one level above the song.
--- Album sessions come from int_album_play (3+ different tracks of an album in a row).
+-- Album sessions come from int_album_play (several different tracks of an album in a row).
 --   * sessions:        how many times you listened to the album as a whole
 --   * session_months:  in how many different months, the album keeps coming back
 --   * longest_run:     the most different tracks of the album in a single session
@@ -10,8 +10,8 @@ CREATE OR REPLACE TABLE int_album_session AS
 SELECT
     run_id,
     album_id,
-    any_value(album) AS album,
-    any_value(album_artist) AS album_artist,
+    min(album) AS album, -- same album, spellings may differ in case
+    min(album_artist) AS album_artist,
     MIN(timestamp) AS started_at,
     bool_or(started_by_you) AS started_by_you,
     COUNT(*) AS plays,
@@ -31,8 +31,8 @@ WITH heard AS (
 )
 SELECT
     album_id,
-    any_value(album) AS album,
-    any_value(album_artist) AS album_artist,
+    min(album) AS album, -- same album, spellings may differ in case
+    min(album_artist) AS album_artist,
     COUNT(*) AS sessions,
     COUNT(DISTINCT date_trunc('month', started_at)) AS session_months,
     MAX(tracks) AS longest_run,
@@ -53,22 +53,12 @@ WITH scores AS (
         PERCENT_RANK() OVER (ORDER BY session_months) AS recurrence_score,
         PERCENT_RANK() OVER (ORDER BY longest_run) AS depth_score
     FROM int_album
-    WHERE sessions >= 2 -- Listened to as a whole at least twice
+    WHERE sessions >= getvariable('album_min_sessions')
         AND norm_name(album_artist) != 'various artists'
 )
 SELECT
     *,
-    0.4 * sessions_score
-    + 0.3 * recurrence_score
-    + 0.3 * depth_score AS score
+    getvariable('album_weight_sessions') * sessions_score
+    + getvariable('album_weight_recurrence') * recurrence_score
+    + getvariable('album_weight_depth') * depth_score AS score
 FROM scores;
-
--- Reporting
-SELECT album, album_artist,
-    sessions,
-    session_months,
-    longest_run,
-    tracks_heard,
-    round(score, 3) AS score
-FROM mart_album
-ORDER BY score DESC LIMIT 20;

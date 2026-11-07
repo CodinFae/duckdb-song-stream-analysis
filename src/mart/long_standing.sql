@@ -44,7 +44,7 @@ post_honeymoon AS (
     SELECT
         t.song_id,
         COUNT(*) FILTER (
-            WHERE m.month >= date_trunc('month', t.first_play) + INTERVAL 3 MONTH
+            WHERE m.month >= date_trunc('month', t.first_play) + to_months(getvariable('long_standing_honeymoon_months'))
         ) AS post_honeymoon_active_months
     FROM track_stats t
     JOIN monthly m USING (song_id)
@@ -66,11 +66,11 @@ SELECT
 
     -- Survival: months played after the honeymoon / months of life after the honeymoon
     post_honeymoon_active_months,
-    greatest(lifetime_months - 3, 0) AS post_honeymoon_months,
+    greatest(lifetime_months - getvariable('long_standing_honeymoon_months'), 0) AS post_honeymoon_months,
     post_honeymoon_active_months / nullif(post_honeymoon_months, 0) AS survival_rate,
 
-    -- Proven: 0 -> 1 over the first 3 years, then capped
-    least(lifetime_months / 36.0, 1) AS proven,
+    -- Proven: 0 -> 1 over the first years, then capped
+    least(lifetime_months / getvariable('long_standing_proven_months'), 1) AS proven,
 
     date_diff('day', last_play, last_date) AS time_since_plays
 
@@ -82,19 +82,9 @@ CROSS JOIN dataset_stats;
 CREATE OR REPLACE TABLE mart_long_standing AS
 SELECT
     *,
-    0.6 * survival_rate + 0.4 * proven AS score
+    getvariable('long_standing_weight_survival') * survival_rate
+    + getvariable('long_standing_weight_proven') * proven AS score
 FROM int_long_standing
-WHERE active_days >= 7        -- Listened on at least 7 different days
-    AND lifetime_months >= 12 -- Too young to tell otherwise
+WHERE active_days >= getvariable('long_standing_min_active_days')
+    AND lifetime_months >= getvariable('long_standing_min_lifetime_months') -- Too young to tell otherwise
 ;
-
--- Reporting
-SELECT title, artist,
-    strftime(first_play, '%Y-%m') AS since,
-    lifetime_months AS life_months,
-    format('{0}/{1}', post_honeymoon_active_months, post_honeymoon_months) AS months_after_honeymoon,
-    round(survival_rate, 2) AS survival,
-    round(proven, 2) AS proven,
-    round(score, 3) AS score
-FROM mart_long_standing
-ORDER BY score DESC, active_days DESC LIMIT 20;

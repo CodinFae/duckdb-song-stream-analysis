@@ -16,13 +16,21 @@ explore:
 shell:
     duckdb {{db}}
 
+# Print a mart's top 20: long_standing, obsession, intentionality, work or album
+report name:
+    duckdb -readonly {{db}} -c ".read reports/{{name}}.sql"
+
+# Print every report
+reports:
+    for f in reports/*.sql; do echo "== $f"; duckdb -readonly {{db}} -c ".read $f"; done
+
 # Lint SQL files
 lint:
-    uv run sqruff lint src/
+    uv run sqruff lint src/ reports/
 
 # Auto-fix SQL formatting
 fmt:
-    uv run sqruff fix src/
+    uv run sqruff fix src/ reports/
 
 # Delete the local database (rebuild with `just build`)
 clean:

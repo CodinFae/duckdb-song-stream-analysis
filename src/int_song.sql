@@ -44,8 +44,8 @@ names AS (
 tracks AS (
     SELECT
         track_id,
-        arg_max(track, last_seen) AS track,
-        arg_max(artist, last_seen) AS artist,
+        arg_max(track, row(last_seen, track)) AS track,
+        arg_max(artist, row(last_seen, artist)) AS artist,
         SUM(plays) AS plays
     FROM names
     GROUP BY track_id
@@ -219,11 +219,11 @@ work_keys AS (
 SELECT
     track_id,
     md5(artist_key || '|' || title_key) AS song_id,
-    -- Display the most played variant of the song
-    arg_max(track, plays) OVER song AS title,
-    arg_max(display_artist, plays) OVER song AS artist,
+    -- Display the most played variant of the song (ties: the shortest, cleanest title)
+    arg_max(track, row(plays, -length(track), track)) OVER song AS title,
+    arg_max(display_artist, row(plays, display_artist)) OVER song AS artist,
     md5(work_key) AS work_id,
-    arg_max(work_display, plays) OVER work AS work_title,
+    arg_max(work_display, row(plays, -length(work_display), work_display)) OVER work AS work_title,
     track AS source_title,
     artist AS source_artist
 FROM work_keys

@@ -10,7 +10,7 @@ SELECT
     spotify_track_uri AS track_id,
     reason_start,
     reason_end,
-    ms_played > 30000 AS count_as_play
+    ms_played > getvariable('counted_play_min_ms') AS count_as_play
 FROM raw_spotify_data
 WHERE
     track_id IS NOT NULL -- keep only songs

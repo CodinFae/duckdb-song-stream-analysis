@@ -10,7 +10,8 @@ def _():
     import marimo as mo
     import duckdb
 
-    connection = duckdb.connect("spotify.duckdb")
+    # Read-only, so `just build` can run while the notebook is open
+    connection = duckdb.connect("spotify.duckdb", read_only=True)
     return connection, mo
 
 
@@ -18,18 +19,7 @@ def _():
 def _(connection, mo):
     _df = mo.sql(
         f"""
-        SELECT * FROM "spotify"."main"."mart_obsession" ORDER BY score DESC
-        """,
-        engine=connection
-    )
-    return
-
-
-@app.cell
-def _(connection, mo):
-    _df = mo.sql(
-        f"""
-        SELECT * FROM 
+        SELECT * FROM mart_obsession ORDER BY score DESC
         """,
         engine=connection
     )

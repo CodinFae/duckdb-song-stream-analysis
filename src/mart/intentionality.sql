@@ -2,10 +2,10 @@
 -- A song you seek out: when it plays, it's because you picked it (click, play, back button),
 -- not because autoplay or shuffle served it. Songs that follow another one (trackdone) are
 -- neutral: the export can't tell your own playlist from an album or radio.
--- Plays shorter than 10s are ignored: mostly a "not now" skip when shuffle serves a song,
--- neither a listen nor a rejection. A skip after 10s counts against the song.
+-- Very short plays are ignored (see params.sql): mostly a "not now" skip when shuffle serves a song,
+-- neither a listen nor a rejection. A later skip counts against the song.
 -- Seeking out an album counts too: a track that plays inside an album session you started
--- (see int_album_play) is sought, at half the weight of a song you picked directly.
+-- (see int_album_play) is sought, at a lower weight than a song you picked directly.
 
 .print int_intentionality
 CREATE OR REPLACE TABLE int_intentionality AS
@@ -26,7 +26,7 @@ WITH track_stats AS (
                 AND a.started_by_you
         ) AS album_sought_plays,
 
-        picked_plays + 0.5 * album_sought_plays AS selected_plays,
+        picked_plays + getvariable('intentionality_album_pick_weight') * album_sought_plays AS selected_plays,
 
         COUNT(*) FILTER (
             WHERE reason_end = 'fwdbtn'
@@ -34,7 +34,7 @@ WITH track_stats AS (
 
     FROM int_music_play p
     LEFT JOIN int_album_play a USING (event_id)
-    WHERE p.ms_played >= 10000 -- Ignore "not now" skips
+    WHERE p.ms_played >= getvariable('real_play_min_ms') -- Ignore "not now" skips
     GROUP BY song_id, title, song_artist
 ),
 
@@ -51,11 +51,11 @@ global_stats AS (
 SELECT
     t.*,
 
-    (selected_plays + 20 * global_selected_rate)
-        / (total_plays + 20) AS selected_rate,
+    (selected_plays + getvariable('intentionality_prior_plays') * global_selected_rate)
+        / (total_plays + getvariable('intentionality_prior_plays')) AS selected_rate,
 
-    (skipped_plays + 20 * global_skipped_rate)
-        / (total_plays + 20) AS clicked_off_rate
+    (skipped_plays + getvariable('intentionality_prior_plays') * global_skipped_rate)
+        / (total_plays + getvariable('intentionality_prior_plays')) AS clicked_off_rate
 
 FROM track_stats t
 CROSS JOIN global_stats g;
@@ -67,18 +67,8 @@ CROSS JOIN global_stats g;
 CREATE OR REPLACE TABLE mart_intentionality AS
 SELECT
     *,
-    0.8 * selected_rate
-    + 0.2 * (1 - clicked_off_rate) AS score
+    getvariable('intentionality_weight_selected') * selected_rate
+    + getvariable('intentionality_weight_not_skipped') * (1 - clicked_off_rate) AS score
 FROM int_intentionality
-WHERE total_plays >= 10 -- Enough plays for the rates to mean something
+WHERE total_plays >= getvariable('intentionality_min_plays') -- Enough plays for the rates to mean something
 ;
-
-
--- Reporting
-SELECT title, artist,
-    total_plays,
-    round(selected_rate, 3) AS selected_rate,
-    round(clicked_off_rate, 3) AS clicked_off_rate,
-    score
-FROM mart_intentionality
-ORDER BY score DESC LIMIT 20;

@@ -17,7 +17,8 @@ actually matter to you.
 ## Usage
 
 ```sh
-just build    # rebuild spotify.duckdb from data/*.json (and print the reports)
+just build             # rebuild spotify.duckdb from data/*.json
+just report obsession  # print a mart's top 20 (or `just reports` for all)
 just explore  # open the marimo notebook
 just shell    # DuckDB shell on the database
 just lint     # lint SQL with sqruff (`just fmt` to auto-fix)
@@ -32,6 +33,8 @@ just lint     # lint SQL with sqruff (`just fmt` to auto-fix)
 | `int_song` | `src/int_song.sql` | Song identity: one `song_id` per (artist, title), merging releases, remasters, edits, `feat.`, source/soundtrack tags and romanizations. Covers, live and alternative versions stay separate. Manual fixes in `seeds/artist_aliases.csv` and `seeds/title_aliases.csv` |
 | `int_album_play` | `src/int_album_play.sql` | Album sessions play by play: 3+ different tracks of an album in a row, and whether you started the session |
 | `int_` / `mart_` | `src/mart/*.sql` | Per-song metrics (`int_`), then a 0–1 score (`mart_`) |
+
+Every threshold and weight lives in `src/params.sql`. Report queries live in `reports/`.
 
 ## Marts
 
