@@ -2,3 +2,4 @@ data
 *.duckdb
 *.duckdb.wal
 __marimo__
+seeds/judgments.csv

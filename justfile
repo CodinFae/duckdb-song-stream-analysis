@@ -8,8 +8,12 @@ default:
 build:
     duckdb {{db}} -c ".read run.sql"
 
-# Open the marimo notebook to explore the marts
+# Open the explorer as an app: songs, dimensions, tuning, 3D, judge
 explore:
+    uv run marimo run spotify_explorer.py
+
+# Edit the explorer notebook
+explore-edit:
     uv run marimo edit spotify_explorer.py
 
 # Open an interactive DuckDB shell on the database
