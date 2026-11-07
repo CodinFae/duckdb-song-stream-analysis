@@ -8,6 +8,10 @@ default:
 build:
     duckdb {{db}} -c ".read run.sql"
 
+# Export the top 25 of each song dimension with context, for analysis (out/top25.md)
+top25:
+    mkdir -p out && duckdb -readonly -markdown {{db}} -c ".read reports/top25.sql" > out/top25.md && echo "Wrote out/top25.md"
+
 # Generate the story page (out/story.html) from the marts
 story:
     uv run python story.py
