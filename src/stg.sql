@@ -14,4 +14,11 @@ SELECT
 FROM raw_spotify_data
 WHERE
     track_id IS NOT NULL -- keep only songs
+-- Spotify sometimes logs the same play twice (same ts, track and duration): keep one
+QUALIFY row_number() OVER (PARTITION BY event_id) = 1
 ;
+
+SELECT
+    (SELECT COUNT(*) FROM raw_spotify_data WHERE spotify_track_uri IS NOT NULL)
+    - COUNT(*) AS duplicate_plays_removed
+FROM stg_music_play;
