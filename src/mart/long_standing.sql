@@ -56,10 +56,9 @@ SELECT *,
     percent_rank() OVER (ORDER BY longevity) as longevity_score,
     percent_rank() OVER (ORDER BY active_days) as active_days_score,
     percent_rank() OVER (ORDER BY loyalty_rate) as loyalty_score,
-    exp(-ln(2)*time_since_plays/90) AS  recency_score,
-    0.2*longevity_score+0.2*active_days_score+0.4*loyalty_score+0.2*recency_score as score
+    0.25*longevity_score+0.25*active_days_score+0.5*loyalty_score as score
 FROM int_long_standing
--- "In my life": no recency filter, old favourites stay (recency only weighs in the score)
+-- "In my life": recency is not part of the score, a favourite from years ago still counts
 WHERE active_days >= 7 -- Songs need to have been listened of 7 different days to count as long_standing
 ;
 
@@ -68,7 +67,7 @@ SELECT title, artist,
     format('{0} ({1:2f})', longevity, longevity_score) as longevity,
     format('{0} ({1:2f})', active_days, active_days_score) as active_days,
     format('{0}/{1} ({2:2f})', monthly_loyalty, lifetime_months, loyalty_score) as active_months,
-    format('{0} ({1:2f})', time_since_plays, recency_score) as days_since_plays,
+    time_since_plays as days_since_plays,
     score
 FROM mart_long_standing
 ORDER BY score DESC LIMIT 20;

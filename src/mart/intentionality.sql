@@ -42,30 +42,24 @@ FROM track_stats t
 CROSS JOIN global_stats g;
 
 .print mart_intentionality
+-- Score on the (smoothed) rates directly rather than percentiles: rates are already 0-1,
+-- keep the distance between songs and don't move when other songs are added.
+-- trackdone (song followed the previous one) is neutral: neither selected nor skipped.
 CREATE OR REPLACE TABLE mart_intentionality AS
-WITH scores AS (
-    SELECT
-        *,
-        PERCENT_RANK() OVER (
-            ORDER BY selected_rate
-        ) AS selected_score,
-
-        PERCENT_RANK() OVER (
-            ORDER BY  clicked_off_rate DESC
-        ) AS not_skipped_score
-    FROM int_intentionality
-)
 SELECT
     *,
-    0.8 * selected_score
-    + 0.2 * not_skipped_score AS score
-FROM scores;
+    0.8 * selected_rate
+    + 0.2 * (1 - clicked_off_rate) AS score
+FROM int_intentionality
+WHERE total_plays >= 10 -- Enough plays for the rates to mean something
+;
 
 
 -- Reporting
 SELECT title, artist,
-    format('{0} ({1:2f})', selected_rate, selected_score) as selected_rate,
-    format('{0} ({1:2f})', clicked_off_rate, not_skipped_score) as clicked_off_rate,
+    total_plays,
+    round(selected_rate, 3) AS selected_rate,
+    round(clicked_off_rate, 3) AS clicked_off_rate,
     score
 FROM mart_intentionality
 ORDER BY score DESC LIMIT 20;
