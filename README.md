@@ -20,6 +20,7 @@ actually matter to you.
 just build             # rebuild spotify.duckdb from data/*.json
 just report obsession  # print a mart's top 20 (or `just reports` for all)
 just explore           # explorer app: song cards, dimensions, weight tuning, 3D view, judge
+just story             # generate out/story.html, the story of your listening (local, gitignored)
 just explore  # open the marimo notebook
 just shell    # DuckDB shell on the database
 just lint     # lint SQL with sqruff (`just fmt` to auto-fix)

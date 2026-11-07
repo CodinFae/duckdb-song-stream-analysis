@@ -10,11 +10,13 @@
 --   * binge_months: in how many different months, a refuge you come back to
 --   * max_day:      the most intense day
 
-.print int_obsession
-CREATE OR REPLACE TABLE int_obsession AS
-WITH
-
-daily AS (
+.print int_song_day
+-- Plays of each song per day, and whether that day was a binge (also used for the eras)
+CREATE OR REPLACE TABLE int_song_day AS
+SELECT
+    *,
+    plays >= getvariable('obsession_binge_day_plays') AS is_binge
+FROM (
     SELECT
         song_id,
         CAST(p.timestamp AS DATE) AS day,
@@ -24,7 +26,11 @@ daily AS (
     LEFT JOIN int_album_play a USING (event_id)
     WHERE p.count_as_play = true
     GROUP BY song_id, day
-),
+);
+
+.print int_obsession
+CREATE OR REPLACE TABLE int_obsession AS
+WITH
 
 songs AS (
     SELECT DISTINCT song_id, title, song_artist AS artist
@@ -36,14 +42,14 @@ SELECT
     title,
     artist,
     SUM(raw_plays) AS total_plays,
-    COUNT(*) FILTER (WHERE plays >= getvariable('obsession_binge_day_plays')) AS binge_days,
-    COUNT(DISTINCT date_trunc('month', day)) FILTER (WHERE plays >= getvariable('obsession_binge_day_plays')) AS binge_months,
+    COUNT(*) FILTER (WHERE is_binge) AS binge_days,
+    COUNT(DISTINCT date_trunc('month', day)) FILTER (WHERE is_binge) AS binge_months,
     MAX(plays) AS max_day,
     -- Share of the song's plays that happened during binge days
-    SUM(raw_plays) FILTER (WHERE plays >= getvariable('obsession_binge_day_plays')) / SUM(raw_plays) AS binge_share,
-    MIN(day) FILTER (WHERE plays >= getvariable('obsession_binge_day_plays')) AS first_binge,
-    MAX(day) FILTER (WHERE plays >= getvariable('obsession_binge_day_plays')) AS last_binge
-FROM daily
+    SUM(raw_plays) FILTER (WHERE is_binge) / SUM(raw_plays) AS binge_share,
+    MIN(day) FILTER (WHERE is_binge) AS first_binge,
+    MAX(day) FILTER (WHERE is_binge) AS last_binge
+FROM int_song_day
 JOIN songs USING (song_id)
 GROUP BY song_id, title, artist;
 

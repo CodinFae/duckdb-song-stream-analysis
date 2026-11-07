@@ -8,6 +8,10 @@ default:
 build:
     duckdb {{db}} -c ".read run.sql"
 
+# Generate the story page (out/story.html) from the marts
+story:
+    uv run python story.py
+
 # Open the explorer as an app: songs, dimensions, tuning, 3D, judge
 explore:
     uv run marimo run spotify_explorer.py
