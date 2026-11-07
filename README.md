@@ -30,6 +30,7 @@ just lint     # lint SQL with sqruff (`just fmt` to auto-fix)
 | `raw_` | `src/raw.sql` | JSON export loaded as-is |
 | `stg_` | `src/stg.sql` | One row per song play, renamed columns, podcasts removed. A play "counts" above 30s |
 | `int_song` | `src/int_song.sql` | Song identity: one `song_id` per (artist, title), merging releases, remasters, edits, `feat.`, source/soundtrack tags and romanizations. Covers, live and alternative versions stay separate. Manual fixes in `seeds/artist_aliases.csv` and `seeds/title_aliases.csv` |
+| `int_album_play` | `src/int_album_play.sql` | Album sessions play by play: 3+ different tracks of an album in a row, and whether you started the session |
 | `int_` / `mart_` | `src/mart/*.sql` | Per-song metrics (`int_`), then a 0–1 score (`mart_`) |
 
 ## Marts
@@ -38,9 +39,10 @@ just lint     # lint SQL with sqruff (`just fmt` to auto-fix)
   played after the first 3 months (survival) and lifetime capped at 3 years. Songs under
   12 months are too young to tell.
 - **obsession**: songs consumed intensely, on loop: days with 3+ plays (binge days), in how
-  many different months, and the most plays in a day.
+  many different months, and the most plays in a day. Plays inside an album session count half.
 - **intentionality**: songs you pick on purpose (click, play, back button) rather than
-  autoplay, and rarely skip. Smoothed with a 20-play prior, at least 10 plays.
+  autoplay, and rarely skip. Tracks inside an album session you started count as half a pick.
+  Smoothed with a 20-play prior, at least 10 plays, plays under 10s ignored.
 - **work**: compositions you love beyond one performer: performers whose version you played
   3+ times, and plays beyond the main version. Translations and homonyms in `seeds/work_aliases.csv`.
 - **album**: albums you listen to as a whole: sessions of 3+ different tracks in a row, in how

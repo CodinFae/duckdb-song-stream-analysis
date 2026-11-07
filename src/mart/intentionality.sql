@@ -4,6 +4,8 @@
 -- neutral: the export can't tell your own playlist from an album or radio.
 -- Plays shorter than 10s are ignored: mostly a "not now" skip when shuffle serves a song,
 -- neither a listen nor a rejection. A skip after 10s counts against the song.
+-- Seeking out an album counts too: a track that plays inside an album session you started
+-- (see int_album_play) is sought, at half the weight of a song you picked directly.
 
 .print int_intentionality
 CREATE OR REPLACE TABLE int_intentionality AS
@@ -16,14 +18,23 @@ WITH track_stats AS (
 
         COUNT(*) FILTER (
             WHERE reason_start IN ('clickrow', 'playbtn','backbtn')
-        ) AS selected_plays,
+        ) AS picked_plays,
+
+        -- Not picked directly, but inside an album session you started
+        COUNT(*) FILTER (
+            WHERE reason_start NOT IN ('clickrow', 'playbtn','backbtn')
+                AND a.started_by_you
+        ) AS album_sought_plays,
+
+        picked_plays + 0.5 * album_sought_plays AS selected_plays,
 
         COUNT(*) FILTER (
             WHERE reason_end = 'fwdbtn'
         ) AS skipped_plays
 
-    FROM int_music_play
-    WHERE ms_played >= 10000 -- Ignore "not now" skips
+    FROM int_music_play p
+    LEFT JOIN int_album_play a USING (event_id)
+    WHERE p.ms_played >= 10000 -- Ignore "not now" skips
     GROUP BY song_id, title, song_artist
 ),
 

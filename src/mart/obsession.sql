@@ -4,6 +4,8 @@
 -- (that's long_standing).
 -- Strict loops (same song twice in a row) are rare in the data: on loop means many plays
 -- in the same day. A binge day is a day with at least 3 plays of the song.
+-- A play inside an album session counts as half a play: binging a soundtrack still matters,
+-- but it's partly a binge of the album, not of each of its tracks (see mart_album).
 --   * binge_days:   how many times the song was binged
 --   * binge_months: in how many different months, a refuge you come back to
 --   * max_day:      the most intense day
@@ -15,10 +17,12 @@ WITH
 daily AS (
     SELECT
         song_id,
-        CAST(timestamp AS DATE) AS day,
-        COUNT(*) AS plays
-    FROM int_music_play
-    WHERE count_as_play = true
+        CAST(p.timestamp AS DATE) AS day,
+        COUNT(*) AS raw_plays,
+        SUM(CASE WHEN a.event_id IS NULL THEN 1.0 ELSE 0.5 END)::DOUBLE AS plays
+    FROM int_music_play p
+    LEFT JOIN int_album_play a USING (event_id)
+    WHERE p.count_as_play = true
     GROUP BY song_id, day
 ),
 
@@ -31,12 +35,12 @@ SELECT
     song_id,
     title,
     artist,
-    SUM(plays) AS total_plays,
+    SUM(raw_plays) AS total_plays,
     COUNT(*) FILTER (WHERE plays >= 3) AS binge_days,
     COUNT(DISTINCT date_trunc('month', day)) FILTER (WHERE plays >= 3) AS binge_months,
     MAX(plays) AS max_day,
     -- Share of the song's plays that happened during binge days
-    SUM(plays) FILTER (WHERE plays >= 3) / SUM(plays) AS binge_share,
+    SUM(raw_plays) FILTER (WHERE plays >= 3) / SUM(raw_plays) AS binge_share,
     MIN(day) FILTER (WHERE plays >= 3) AS first_binge,
     MAX(day) FILTER (WHERE plays >= 3) AS last_binge
 FROM daily
