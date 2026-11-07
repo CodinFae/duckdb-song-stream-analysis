@@ -10,7 +10,7 @@ def _():
     import marimo as mo
     import duckdb
 
-    connection = duckdb.connect("spofity.duckdb")
+    connection = duckdb.connect("spotify.duckdb")
     return connection, mo
 
 
@@ -18,7 +18,7 @@ def _():
 def _(connection, mo):
     _df = mo.sql(
         f"""
-        SELECT * FROM "spofity"."main"."mart_obsession" ORDER BY score DESC
+        SELECT * FROM "spotify"."main"."mart_obsession" ORDER BY score DESC
         """,
         engine=connection
     )

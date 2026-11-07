@@ -1,9 +1,15 @@
 [project]
 name = "spotify"
 version = "0.1.0"
-description = "Add your description here"
+description = "Analyse your Spotify streaming history with DuckDB"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "duckdb>=2.0.0",
     "marimo[sql]>=0.25.2",
+]
+
+[dependency-groups]
+dev = [
+    "sqruff>=0.44.0",
 ]
