@@ -1,3 +1,10 @@
+-- Intentionality
+-- A song you seek out: when it plays, it's because you picked it (click, play, back button),
+-- not because autoplay or shuffle served it. Songs that follow another one (trackdone) are
+-- neutral: the export can't tell your own playlist from an album or radio.
+-- Plays shorter than 10s are ignored: mostly a "not now" skip when shuffle serves a song,
+-- neither a listen nor a rejection. A skip after 10s counts against the song.
+
 .print int_intentionality
 CREATE OR REPLACE TABLE int_intentionality AS
 WITH track_stats AS (
@@ -16,6 +23,7 @@ WITH track_stats AS (
         ) AS skipped_plays
 
     FROM int_music_play
+    WHERE ms_played >= 10000 -- Ignore "not now" skips
     GROUP BY song_id, title, song_artist
 ),
 
