@@ -30,16 +30,17 @@ just lint     # lint SQL with sqruff (`just fmt` to auto-fix)
 | `raw_` | `src/raw.sql` | JSON export loaded as-is |
 | `stg_` | `src/stg.sql` | One row per song play, renamed columns, podcasts removed. A play "counts" above 30s |
 | `int_song` | `src/int_song.sql` | Song identity: one `song_id` per (artist, title), merging releases, remasters, edits, `feat.`, source/soundtrack tags and romanizations. Covers, live and alternative versions stay separate. Manual fixes in `seeds/artist_aliases.csv` and `seeds/title_aliases.csv` |
-| `int_` / `mart_` | `src/mart/*.sql` | Per-track metrics, then percentile-based scores (0–1) |
+| `int_` / `mart_` | `src/mart/*.sql` | Per-song metrics (`int_`), then a 0–1 score (`mart_`) |
 
 ## Marts
 
-- **week_charts**: weekly top chart of your plays (`int_week_charts`).
-- **long_standing**: songs that stayed with you over time: lifetime span, active
-  days, active months and recency (90-day half-life).
-- **obsession**: songs you binged: total plays, weeks at #1, peak weekly plays.
-- **intentionality**: songs you choose on purpose (clicked, played, went back to)
-  versus skipped, smoothed with a 20-play prior.
+- **long_standing**: companions of life, songs you keep coming back to: share of months
+  played after the first 3 months (survival) and lifetime capped at 3 years. Songs under
+  12 months are too young to tell.
+- **obsession**: songs consumed intensely, on loop: days with 3+ plays (binge days), in how
+  many different months, and the most plays in a day.
+- **intentionality**: songs you pick on purpose (click, play, back button) rather than
+  autoplay, and rarely skip. Smoothed with a 20-play prior, at least 10 plays.
 
 ## Roadmap
 
