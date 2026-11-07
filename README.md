@@ -41,6 +41,10 @@ just lint     # lint SQL with sqruff (`just fmt` to auto-fix)
   many different months, and the most plays in a day.
 - **intentionality**: songs you pick on purpose (click, play, back button) rather than
   autoplay, and rarely skip. Smoothed with a 20-play prior, at least 10 plays.
+- **work**: compositions you love beyond one performer: performers whose version you played
+  3+ times, and plays beyond the main version. Translations and homonyms in `seeds/work_aliases.csv`.
+- **album**: albums you listen to as a whole: sessions of 3+ different tracks in a row, in how
+  many months, and the longest run.
 
 ## Roadmap
 

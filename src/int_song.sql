@@ -20,6 +20,16 @@
 CREATE OR REPLACE MACRO norm_text(x) AS
     translate(nfc_normalize(x), '！？～〜＊（）［］：　＂＆', '!?~~*()[]: "&');
 CREATE OR REPLACE MACRO norm_name(x) AS lower(trim(norm_text(x)));
+-- Version tags, for the work level: " - Acoustic Version", "(English Cover)", " - Russian ver.", " - Live"...
+-- ".*" and not "[^-]*" after the dash: tags can contain hyphens (" - M-10 Director's Edit Version")
+CREATE OR REPLACE MACRO strip_version_tags(x) AS trim(regexp_replace(
+    regexp_replace(x,
+        '\s*[\(\[][^\)\]]*\b(version|ver\.|ver\b|cover|live|remix|instrumental|inst\.|inst\b|off vocal|karaoke|acoustic|piano|orchestral|arrange|tv size|full size|slowed|sped up|nightcore|english|russian|spanish|español|japanese|french|remake|demo)[^\)\]]*[\)\]]', '', 'gi'),
+    '\s+-\s+.*\b(version|ver\.|ver\b|cover|live|remix|instrumental|inst\.|inst\b|off vocal|karaoke|acoustic|piano|orchestral|arrange|tv size|full size|slowed|sped up|nightcore|english|russian|spanish|español|japanese|french|remake|demo).*$', '', 'i'));
+-- Accents are ignored at the work level ("Komm, süsser Tod" = "Komm, susser Tod"), but not on
+-- Japanese/Chinese/Korean titles: strip_accents would also remove the dakuten (ビ -> ヒ)
+CREATE OR REPLACE MACRO fold_latin_accents(x) AS
+    CASE WHEN regexp_matches(x, '[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]') THEN x ELSE strip_accents(x) END;
 
 CREATE OR REPLACE TABLE int_song AS
 WITH
@@ -159,6 +169,51 @@ normalized AS (
         END AS title_key
     FROM stripped s
     JOIN sources_per_title p USING (artist_key, base_title)
+),
+
+-- Work: the composition, whoever performs it. One level above the song: all the versions
+-- of a song (live, cover, language, acoustic...) and all its performers share a work_id.
+-- Source annotations only tell works apart for generic titles ("Main Theme", "Kakariko Village"),
+-- i.e. titles an artist has from several sources.
+-- seeds/work_aliases.csv: translated titles (Rabbit Hole = ラビットホール), and homonyms, by giving
+-- one artist's song its own work name (Skillet's "Monster" is not Adventure Time's).
+generic_titles AS (
+    SELECT DISTINCT base_title FROM sources_per_title WHERE n_sources > 1
+),
+
+work_aliases AS (
+    SELECT
+        nullif(norm_name(artist), '') AS artist,
+        fold_latin_accents(norm_name(title)) AS title,
+        fold_latin_accents(norm_name(work)) AS work
+    FROM read_csv('seeds/work_aliases.csv', all_varchar = true)
+),
+
+works AS (
+    SELECT
+        n.*,
+        fold_latin_accents(strip_version_tags(n.base_title)) AS work_base,
+        -- Display: the source title without its version tag
+        strip_version_tags(n.track) AS work_display
+    FROM normalized n
+),
+
+work_keys AS (
+    SELECT
+        w.*,
+        coalesce(wa.work, w.work_base) AS work_title,
+        CASE
+            WHEN g.base_title IS NULL THEN coalesce(wa.work, w.work_base)
+            -- Generic title: the source is the identity, or the song itself when there is none
+            WHEN w.source_key IS NOT NULL THEN w.work_base || '|' || w.source_key
+            ELSE w.work_base || '|' || w.artist_key
+        END AS work_key
+    FROM works w
+    LEFT JOIN generic_titles g ON g.base_title = w.base_title
+    LEFT JOIN work_aliases wa
+        ON wa.title = w.work_base
+        AND (wa.artist IS NULL OR wa.artist = w.artist_key)
+    QUALIFY row_number() OVER (PARTITION BY w.track_id ORDER BY wa.artist NULLS LAST) = 1
 )
 
 SELECT
@@ -167,18 +222,23 @@ SELECT
     -- Display the most played variant of the song
     arg_max(track, plays) OVER song AS title,
     arg_max(display_artist, plays) OVER song AS artist,
+    md5(work_key) AS work_id,
+    arg_max(work_display, plays) OVER work AS work_title,
     track AS source_title,
     artist AS source_artist
-FROM normalized
-WINDOW song AS (PARTITION BY artist_key, title_key);
+FROM work_keys
+WINDOW
+    song AS (PARTITION BY artist_key, title_key),
+    work AS (PARTITION BY work_key);
 
--- Every play, with its song
+-- Every play, with its song and work
 CREATE OR REPLACE VIEW int_music_play AS
-SELECT p.*, s.song_id, s.title, s.artist AS song_artist
+SELECT p.*, s.song_id, s.title, s.artist AS song_artist, s.work_id, s.work_title
 FROM stg_music_play p
 JOIN int_song s USING (track_id);
 
 SELECT
     COUNT(DISTINCT track_id) AS track_ids,
-    COUNT(DISTINCT song_id) AS songs
+    COUNT(DISTINCT song_id) AS songs,
+    COUNT(DISTINCT work_id) AS works
 FROM int_song;
