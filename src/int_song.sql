@@ -2,46 +2,163 @@
 -- A song is one work performed by one artist, whatever the release (single, album, deluxe, remaster...).
 -- Spotify's track_id is per recording x release, so several track_ids can map to the same song_id.
 --
--- Merged:   releases, remasters, radio/single/album/full edits, "(feat. X)"
--- Separate: covers (different artist), live, remix, acoustic/piano/... versions, language versions, instrumental
--- Artist aliases are fixed by hand in seeds/artist_aliases.csv
+-- Merged:   releases, remasters, radio/single/album/full edits, "(feat. X)", soundtrack tags,
+--           romanization after a Japanese/Chinese/Korean title ("ピースサイン - Peace Sign"),
+--           source annotations like '(From "Game")' or ' - Opening Theme to "Anime"' when the
+--           artist has only one song with that title (otherwise the source is what tells them apart:
+--           "Main Theme (From Zelda)" vs "Main Theme (From Overwatch)")
+-- Separate: covers (different artist), live (incl. THE FIRST TAKE), remix, acoustic/piano/... versions, language versions, instrumental
+-- Renames: Spotify sometimes renames a title or an artist under the same track_id.
+-- Each track_id uses its most recent name; older titles become automatic title aliases, so other
+-- tracks still published under the old title merge too. Artist changes are not generalized (see below).
+-- Manual fixes, for what the data can't tell (they take priority):
+--   seeds/artist_aliases.csv: same artist under two names
+--   seeds/title_aliases.csv:  same song under two titles (romanization, translation...)
 
 .print int_song
+-- Full-width punctuation and spaces (！？～（） ...) are folded to their ASCII form
+CREATE OR REPLACE MACRO norm_text(x) AS
+    translate(nfc_normalize(x), '！？～〜＊（）［］：　＂＆', '!?~~*()[]: "&');
+CREATE OR REPLACE MACRO norm_name(x) AS lower(trim(norm_text(x)));
+
 CREATE OR REPLACE TABLE int_song AS
 WITH
 
-aliases AS (
-    SELECT lower(trim(alias)) AS alias, lower(trim(canonical)) AS canonical
-    FROM read_csv('seeds/artist_aliases.csv')
+names AS (
+    SELECT track_id, track, artist, MAX(timestamp) AS last_seen, COUNT(*) AS plays
+    FROM stg_music_play
+    GROUP BY track_id, track, artist
 ),
 
+-- Each track_id uses its most recent name (deterministic, and Spotify's current naming)
 tracks AS (
     SELECT
         track_id,
-        any_value(track) AS track,
-        any_value(artist) AS artist,
-        COUNT(*) AS plays
-    FROM stg_music_play
+        arg_max(track, last_seen) AS track,
+        arg_max(artist, last_seen) AS artist,
+        SUM(plays) AS plays
+    FROM names
     GROUP BY track_id
+),
+
+-- Manual only: an artist change under a track_id is often an album-artist change
+-- (Atlus Sound Team -> Lyn), not a rename, so it can't be generalized automatically
+artist_aliases AS (
+    SELECT norm_name(alias) AS alias, norm_name(canonical) AS canonical, canonical AS display_name
+    FROM read_csv('seeds/artist_aliases.csv')
+),
+
+title_aliases AS (
+    SELECT
+        coalesce(a.canonical, norm_name(m.artist)) AS artist,
+        norm_name(m.alias) AS alias,
+        m.canonical
+    FROM (
+        SELECT artist, alias, canonical, 1 AS priority FROM read_csv('seeds/title_aliases.csv')
+        UNION ALL
+        -- Automatic: older titles of a renamed track_id (same recording, so same song)
+        SELECT t.artist, n.track, t.track, 2
+        FROM names n
+        JOIN tracks t USING (track_id)
+        WHERE norm_name(n.track) != norm_name(t.track)
+    ) m
+    LEFT JOIN artist_aliases a ON a.alias = norm_name(m.artist)
+    -- One canonical title per alias: manual first, then deterministic
+    QUALIFY row_number() OVER (
+        PARTITION BY coalesce(a.canonical, norm_name(m.artist)), norm_name(m.alias)
+        ORDER BY m.priority, m.canonical
+    ) = 1
+),
+
+with_artist AS (
+    SELECT
+        t.*,
+        coalesce(a.canonical, norm_name(t.artist)) AS artist_key,
+        -- Artists in the seed (alias or canonical) are displayed under their canonical name
+        coalesce(c.display_name, t.artist) AS display_artist
+    FROM tracks t
+    LEFT JOIN artist_aliases a ON a.alias = norm_name(t.artist)
+    LEFT JOIN (SELECT DISTINCT canonical, display_name FROM artist_aliases) c
+        ON c.canonical = coalesce(a.canonical, norm_name(t.artist))
+),
+
+with_title AS (
+    SELECT
+        w.*,
+        norm_text(coalesce(ta.canonical, w.track)) AS clean_title
+    FROM with_artist w
+    LEFT JOIN title_aliases ta
+        ON ta.artist = w.artist_key
+        AND ta.alias = norm_name(w.track)
+),
+
+stripped AS (
+    -- Title cleaning, one step per column (each step reads the previous one)
+    SELECT
+        *,
+        lower(trim(clean_title)) AS t0,
+        -- "THE FIRST TAKE" is a separate one-take live performance, not a source annotation
+        t0 LIKE '%first take%' AS is_live_take,
+
+        -- 1. Featured artists: "(feat. X)", "[ft. X]", "(with X)", " feat.X"
+        regexp_replace(
+            regexp_replace(t0, '\s*[\(\[](feat\.?|ft\.?|featuring|with)\s[^\)\]]*[\)\]]', '', 'g'),
+            '\s+(feat\.|ft\.|featuring\s).*$', ''
+        ) AS t1,
+
+        -- 2. Source annotation: '(From "Game")', ' - From "Movie" Soundtrack', ' - Opening Theme to "Anime"'
+        --    The source is kept (letters/digits only) to tell apart generic titles, see title_key
+        CASE WHEN NOT is_live_take THEN nullif(regexp_replace(coalesce(
+            nullif(regexp_extract(t0, '[\(\[]from\s([^\)\]]*)[\)\]]', 1), ''),
+            nullif(regexp_extract(t0,
+                '\s+-\s+(?:from\s|(?:opening|ending)\s(?:theme\s)?(?:to|from|of)\s|theme\s(?:from|of)\s)(.*)$', 1), '')
+        ), '[^[:alnum:]]', '', 'g'), '') END AS source_key,
+        CASE WHEN is_live_take THEN t1 ELSE regexp_replace(
+            regexp_replace(t1, '\s*[\(\[]from\s[^\)\]]*[\)\]]', '', 'g'),
+            '\s+-\s+(from\s|(opening|ending)\s(theme\s)?(to|from|of)\s|theme\s(from|of)\s).*$', ''
+        ) END AS t2,
+
+        -- 3. Same-recording version tags: "[Full Version]", " - 2011 Remaster", " - Radio Edit", " - Remasterisé en 2006"...
+        regexp_replace(
+            regexp_replace(t2,
+                '\s*[\(\[][^\)\]]*(remaster|radio edit|single version|album version|full version|original version)[^\)\]]*[\)\]]', '', 'g'),
+            '\s+-\s+[^-]*(remaster|radio edit|single version|album version|full version|original version)[^-]*$', ''
+        ) AS t3,
+
+        -- 4. Soundtrack tags: " - Hazbin Hotel Original Soundtrack", " - Original Game Soundtrack"
+        regexp_replace(t3, '\s+-\s+[^-]*soundtrack[^-]*$', '') AS t4,
+
+        -- 5. Japanese/Chinese/Korean title followed by its romanization or translation:
+        --    "ピースサイン - Peace Sign", "堕天 - Daten". Not when the Latin part is a variant ("- TV Size", "- Live"...)
+        CASE
+            WHEN regexp_matches(t4, '^([^a-z]*[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}][^a-z]*?)\s+-\s+([\x20-\x7e]+)$')
+                AND NOT regexp_matches(
+                    regexp_extract(t4, '^([^a-z]*[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}][^a-z]*?)\s+-\s+([\x20-\x7e]+)$', 2),
+                    '(live|remix|instrumental|version|ver\b|cover|acoustic|piano|mix|edit|inst\b|karaoke|off vocal|orchestra|reprise|slowed|sped|tv size|short|first take)')
+            THEN regexp_extract(t4, '^([^a-z]*[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}][^a-z]*?)\s+-\s+([\x20-\x7e]+)$', 1)
+            ELSE t4
+        END AS t5,
+
+        trim(regexp_replace(t5, '\s*-\s*$', '')) AS base_title
+    FROM with_title
+),
+
+sources_per_title AS (
+    SELECT artist_key, base_title, COUNT(DISTINCT source_key) AS n_sources
+    FROM stripped
+    GROUP BY artist_key, base_title
 ),
 
 normalized AS (
     SELECT
-        t.*,
-        coalesce(a.canonical, lower(trim(nfc_normalize(t.artist)))) AS artist_key,
-        lower(trim(
-            regexp_replace(
-                regexp_replace(
-                    nfc_normalize(t.track),
-                    -- "(feat. X)", "[ft. X]", "(with X)"
-                    '\s*[\(\[](feat\.?|ft\.?|featuring|with)\s[^\)\]]*[\)\]]', '', 'gi'
-                ),
-                -- " - 2011 Remaster", " - Radio Edit", " - Single Version", " - Remasterisé en 2006"...
-                '\s+-\s+[^-]*(remaster|radio edit|single version|album version|full version|original version)[^-]*$', '', 'i'
-            )
-        )) AS title_key
-    FROM tracks t
-    LEFT JOIN aliases a ON a.alias = lower(trim(nfc_normalize(t.artist)))
+        s.*,
+        CASE
+            WHEN p.n_sources <= 1 THEN s.base_title
+            -- Several sources for the same title: the source is part of the identity
+            ELSE s.base_title || '|' || coalesce(s.source_key, '')
+        END AS title_key
+    FROM stripped s
+    JOIN sources_per_title p USING (artist_key, base_title)
 )
 
 SELECT
@@ -49,7 +166,7 @@ SELECT
     md5(artist_key || '|' || title_key) AS song_id,
     -- Display the most played variant of the song
     arg_max(track, plays) OVER song AS title,
-    arg_max(artist, plays) OVER song AS artist,
+    arg_max(display_artist, plays) OVER song AS artist,
     track AS source_title,
     artist AS source_artist
 FROM normalized
