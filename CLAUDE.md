@@ -30,6 +30,8 @@ Timestamps are TIMESTAMPTZ: cast to DATE in SQL before fetching in Python (no py
 - `emotional.py`: learns which features separate songs labelled emotional yes/no (`seeds/emotional.csv`, last
   answer wins): AUC per feature with bootstrap intervals, L1 logistic + stability selection, depth-3 tree.
   Labels start from the top 50 important songs, so it explains what makes an *important* song emotional.
+  Each label records its `source`; the model's own picks (`likely`, `uncertain`) are biased, so results are
+  also checked on the other answers (`holds`). CV holds out whole artists (yes songs cluster by soundtrack).
 - `reports/`: report queries (not run by the build). `story.py`, `spotify_explorer.py`: the two front-ends.
 
 ## The dimensions (the user's own definitions)

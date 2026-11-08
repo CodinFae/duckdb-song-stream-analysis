@@ -557,8 +557,13 @@ def _(mo, q):
 @app.cell
 def _(mo):
     emo_mode = mo.ui.dropdown(
-        {"Most likely emotional": "likely", "Least sure": "uncertain", "Importance order": "importance"},
-        value="Most likely emotional",
+        {
+            "Random (unbiased)": "random",
+            "Importance order": "importance",
+            "Model: most likely emotional": "likely",
+            "Model: least sure": "uncertain",
+        },
+        value="Random (unbiased)",
         label="After the first batch, ask about",
     )
     emo_mode
@@ -587,7 +592,7 @@ def _(emo_queue, emotional, mo, set_emo_tick):
                 emotional.undo_last()
             elif emo_queue.height:
                 s = emo_queue.row(0, named=True)
-                emotional.save_label(s["song_id"], label, f"{s['title']} — {s['artist']}")
+                emotional.save_label(s["song_id"], label, f"{s['title']} — {s['artist']}", s["source"])
             set_emo_tick(lambda t: t + 1)
 
         return _on_click
@@ -607,14 +612,13 @@ def _(emo_labels, emo_no, emo_queue, emo_skip, emo_undo, emo_yes, emotional, mo)
     )
     if emo_queue.height:
         _s = emo_queue.row(0, named=True)
-        _first = _s["importance_rank"] <= emotional.FIRST_BATCH
         _card = mo.callout(
             mo.vstack(
                 [
                     mo.md(
                         f"### {_s['title']} — {_s['artist']}\n"
                         f"#{_s['importance_rank']} in importance · with you {_s['since']} → {_s['last']}"
-                        + ("" if _first else " · *suggested by the model*")
+                        + f" · *{emotional.SOURCES[_s['source']]}*"
                     ),
                     mo.hstack([emo_yes, emo_no, emo_skip], justify="start"),
                 ]
@@ -645,9 +649,11 @@ def _(emo_describe, emo_result, emotional, mo, pl, px):
             group=pl.col("meaning").str.extract(r"^(\w+):"),
             moves_with=pl.col("feature").map_elements(lambda f: ", ".join(r["correlated"][f][:3]), return_dtype=pl.Utf8),
         )
+        _holds = "holds" in _u.columns
         _top = _u.head(20).reverse()
         _fig = px.scatter(
             _top, x="auc", y="feature", color="group", hover_data={"meaning": True},
+            symbol="holds" if _holds else None, symbol_map={True: "circle", False: "circle-open"},
             error_x=_top["high"] - _top["auc"], error_x_minus=_top["auc"] - _top["low"],
             height=560,
         )
@@ -660,15 +666,21 @@ def _(emo_describe, emo_result, emotional, mo, pl, px):
 
         _p = r["predictions"]
         _cols = ["title", "artist", "importance_rank", "since", "last", pl.col("proba").round(2)]
-        _suggested = _p.filter(pl.col("label").is_null() & (pl.col("importance_rank") <= 250)).sort("proba", descending=True).select(_cols)
+        _suggested = _p.filter(pl.col("label").is_null() & (pl.col("importance_rank") <= emotional.POOL)).sort("proba", descending=True).select(_cols)
         _surprise_no = _p.filter(pl.col("label") == "no").sort("proba", descending=True).select(_cols)
         _surprise_yes = _p.filter(pl.col("label") == "yes").sort("proba").select(_cols)
 
         return mo.vstack(
             [
                 mo.md(
-                    f"### First pass: {r['n_yes']} yes, {r['n_no']} no\n"
-                    "Cross-validated AUC: how well each model sorts songs it did **not** learn from "
+                    f"### {r['n_yes']} yes, {r['n_no']} no\n"
+                    "How each song came to be asked. The model's own picks confirm its guesses: "
+                    "every metric below is also checked on the unbiased answers alone "
+                    f"({r['n_unbiased'][0]} yes, {r['n_unbiased'][1]} no)."
+                ),
+                mo.ui.table(r["sources"].select("how", "yes", "no", "yes_rate", "unbiased"), selection=None),
+                mo.md(
+                    "Cross-validated AUC: how well each model sorts songs of **artists it did not learn from** "
                     "(0.5 = coin flip, 1 = perfect). If *all features* doesn't beat *the 3 dimensions*, "
                     "your dimensions already capture what you call emotional."
                 ),
@@ -680,12 +692,14 @@ def _(emo_describe, emo_result, emotional, mo, pl, px):
                 mo.md(
                     "### One metric at a time\n"
                     "Right of the dotted line: your *yes* songs are higher on it; left: lower. "
-                    "A bar crossing the line is noise (90% bootstrap interval). Metrics that move together "
+                    "A bar crossing the line is noise (90% bootstrap interval). Filled dot (*holds*): clear "
+                    "in the same direction on the unbiased answers too. Metrics that move together "
                     "share the credit: see *moves_with*."
                 ),
                 _fig,
                 mo.ui.table(
                     _u.select("feature", pl.col("auc", "low", "high").round(2), "clear",
+                              *([pl.col("auc_unbiased").round(2), "holds"] if _holds else []),
                               pl.col("median_yes", "median_no").round(2), "moves_with", "meaning"),
                     selection=None, page_size=15,
                 ),
