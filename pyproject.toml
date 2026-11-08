@@ -9,6 +9,7 @@ dependencies = [
     "marimo[sql]>=0.25.2",
     "numpy>=2.5.4",
     "plotly>=7.1.0",
+    "scikit-learn>=1.9.1",
 ]
 
 [dependency-groups]

@@ -24,6 +24,10 @@ explore:
 explore-edit:
     uv run marimo edit spotify_explorer.py
 
+# What makes a song emotional to you: report on your labels (seeds/emotional.csv)
+emotional:
+    uv run python emotional.py
+
 # Open an interactive DuckDB shell on the database
 shell:
     duckdb {{db}}

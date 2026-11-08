@@ -10,6 +10,8 @@ SELECT
     spotify_track_uri AS track_id,
     reason_start,
     reason_end,
+    shuffle,
+    platform,
     ms_played > getvariable('counted_play_min_ms') AS count_as_play
 FROM raw_spotify_data
 WHERE

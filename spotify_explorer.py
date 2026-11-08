@@ -126,7 +126,8 @@ def _(mo):
     **sought** (choice, *"I search for it"*), plus the **work** (a composition beyond its performers)
     and the **album** (albums you listen to as a whole).
 
-    Sections: [Songs](#songs) · [Dimensions](#dimensions) · [Tune](#tune) · [3D](#3d) · [Judge](#judge).
+    Sections: [Songs](#songs) · [Dimensions](#dimensions) · [Tune](#tune) · [3D](#3d) · [Judge](#judge)
+    · [Emotional](#emotional).
     Everything reads `spotify.duckdb`; rebuild it anytime with `just build`.
     """)
     return
@@ -533,6 +534,185 @@ def _(JUDGMENTS, MARTS, get_pair, judge_pick, load_mart, mo, np, params_lines, p
             ]
         )
     _view
+    return
+
+
+@app.cell
+def _(mo, q):
+    import emotional
+
+    emo_features, emo_describe = emotional.load_features(q)
+    get_emo_tick, set_emo_tick = mo.state(0)
+    mo.md(f"""
+    ## Emotional
+    Is this song **emotional** to you? Answer by gut feeling. The first {emotional.FIRST_BATCH} songs are
+    your most important ones (the order of the Songs table); once they're answered, a classifier
+    looks for which of the {len(emo_describe)} metrics of `mart_song_features` separate your *yes*
+    from your *no*, and keeps asking about the songs it's most curious about. Answers go to
+    `seeds/emotional.csv` (the last answer for a song wins: you can change your mind).
+    """)
+    return emo_describe, emo_features, emotional, get_emo_tick, set_emo_tick
+
+
+@app.cell
+def _(mo):
+    emo_mode = mo.ui.dropdown(
+        {"Most likely emotional": "likely", "Least sure": "uncertain", "Importance order": "importance"},
+        value="Most likely emotional",
+        label="After the first batch, ask about",
+    )
+    emo_mode
+    return (emo_mode,)
+
+
+@app.cell
+def _(emo_describe, emo_features, emo_mode, emotional, get_emo_tick, pl):
+    get_emo_tick()  # re-run after every answer
+    emo_labels = emotional.load_labels()
+    _first_left = (
+        emo_features.filter(pl.col("importance_rank") <= emotional.FIRST_BATCH)
+        .join(emo_labels, on="song_id", how="anti")
+        .height
+    )
+    emo_result = emotional.analyse(emo_features, emo_describe, emo_labels) if _first_left == 0 else None
+    emo_queue = emotional.next_songs(emo_features, emo_labels, emo_result, emo_mode.value)
+    return emo_labels, emo_queue, emo_result
+
+
+@app.cell
+def _(emo_queue, emotional, mo, set_emo_tick):
+    def _answer(label):
+        def _on_click(_):
+            if label is None:
+                emotional.undo_last()
+            elif emo_queue.height:
+                s = emo_queue.row(0, named=True)
+                emotional.save_label(s["song_id"], label, f"{s['title']} — {s['artist']}")
+            set_emo_tick(lambda t: t + 1)
+
+        return _on_click
+
+    emo_yes = mo.ui.button(label="Yes, emotional", kind="success", on_click=_answer("yes"))
+    emo_no = mo.ui.button(label="No", kind="danger", on_click=_answer("no"))
+    emo_skip = mo.ui.button(label="Don't know this one", on_click=_answer("skip"))
+    emo_undo = mo.ui.button(label="↶ Undo last answer", on_click=_answer(None))
+    return emo_no, emo_skip, emo_undo, emo_yes
+
+
+@app.cell
+def _(emo_labels, emo_no, emo_queue, emo_skip, emo_undo, emo_yes, emotional, mo):
+    _counts = dict(emo_labels.group_by("label").len().iter_rows())
+    _progress = (
+        f"{_counts.get('yes', 0)} yes · {_counts.get('no', 0)} no · {_counts.get('skip', 0)} skipped"
+    )
+    if emo_queue.height:
+        _s = emo_queue.row(0, named=True)
+        _first = _s["importance_rank"] <= emotional.FIRST_BATCH
+        _card = mo.callout(
+            mo.vstack(
+                [
+                    mo.md(
+                        f"### {_s['title']} — {_s['artist']}\n"
+                        f"#{_s['importance_rank']} in importance · with you {_s['since']} → {_s['last']}"
+                        + ("" if _first else " · *suggested by the model*")
+                    ),
+                    mo.hstack([emo_yes, emo_no, emo_skip], justify="start"),
+                ]
+            ),
+            kind="neutral",
+        )
+    else:
+        _card = mo.callout(mo.md("Every song has an answer."), kind="success")
+    mo.vstack([_card, mo.hstack([mo.md(_progress), emo_undo], justify="space-between")])
+    return
+
+
+@app.cell
+def _(emo_describe, emo_result, emotional, mo, pl, px):
+    def _cv(name, score):
+        return mo.stat(f"{score[0]:.2f}", label=name, caption=f"± {score[1]:.2f}")
+
+    def _emo_view(r):
+        if r is None:
+            return mo.callout(
+                mo.md(f"Answer the first {emotional.FIRST_BATCH} songs to see the first pass of the classifier."),
+                kind="info",
+            )
+        if "error" in r:
+            return mo.callout(mo.md(f"{r['n_yes']} yes, {r['n_no']} no. {r['error']}"), kind="warn")
+
+        _u = r["univariate"].with_columns(
+            group=pl.col("meaning").str.extract(r"^(\w+):"),
+            moves_with=pl.col("feature").map_elements(lambda f: ", ".join(r["correlated"][f][:3]), return_dtype=pl.Utf8),
+        )
+        _top = _u.head(20).reverse()
+        _fig = px.scatter(
+            _top, x="auc", y="feature", color="group", hover_data={"meaning": True},
+            error_x=_top["high"] - _top["auc"], error_x_minus=_top["auc"] - _top["low"],
+            height=560,
+        )
+        _fig.add_vline(x=0.5, line_dash="dot")
+        _fig.update_layout(margin=dict(l=10, r=10, t=10, b=10), xaxis_range=[0, 1], xaxis_title="AUC: 1 = your yes are all higher, 0 = all lower")
+
+        _s = r["sparse"]
+        _sparse = _s["table"].with_columns(meaning=pl.col("feature").replace_strict(emo_describe))
+        _shapes = "\n".join(f"- **{sh['yes']}/{sh['songs']} yes**: {sh['rule']}" for sh in r["tree"]["shapes"]) or "- none"
+
+        _p = r["predictions"]
+        _cols = ["title", "artist", "importance_rank", "since", "last", pl.col("proba").round(2)]
+        _suggested = _p.filter(pl.col("label").is_null() & (pl.col("importance_rank") <= 250)).sort("proba", descending=True).select(_cols)
+        _surprise_no = _p.filter(pl.col("label") == "no").sort("proba", descending=True).select(_cols)
+        _surprise_yes = _p.filter(pl.col("label") == "yes").sort("proba").select(_cols)
+
+        return mo.vstack(
+            [
+                mo.md(
+                    f"### First pass: {r['n_yes']} yes, {r['n_no']} no\n"
+                    "Cross-validated AUC: how well each model sorts songs it did **not** learn from "
+                    "(0.5 = coin flip, 1 = perfect). If *all features* doesn't beat *the 3 dimensions*, "
+                    "your dimensions already capture what you call emotional."
+                ),
+                mo.hstack(
+                    [_cv(k, v) for k, v in r["baselines"].items()]
+                    + [_cv("all features (L1)", _s["cv_auc"]), _cv("tree, depth 3", r["tree"]["cv_auc"])],
+                    justify="start", gap=2,
+                ),
+                mo.md(
+                    "### One metric at a time\n"
+                    "Right of the dotted line: your *yes* songs are higher on it; left: lower. "
+                    "A bar crossing the line is noise (90% bootstrap interval). Metrics that move together "
+                    "share the credit: see *moves_with*."
+                ),
+                _fig,
+                mo.ui.table(
+                    _u.select("feature", pl.col("auc", "low", "high").round(2), "clear",
+                              pl.col("median_yes", "median_no").round(2), "moves_with", "meaning"),
+                    selection=None, page_size=15,
+                ),
+                mo.md(
+                    f"### Together (sparse logistic regression, C = {_s['C']})\n"
+                    "The few metrics that matter once the others are known. *kept*: share of 200 resamples "
+                    "of your answers where it's used; trust the ones near 1 with a consistent sign."
+                ),
+                mo.ui.table(_sparse.with_columns(pl.col(pl.Float64).round(2)), selection=None, page_size=10),
+                mo.md(f"### Shapes (decision tree)\nGroups of your emotional songs, as rules on raw values:\n\n{_shapes}"),
+                mo.accordion({"Full tree": mo.md(f"```\n{r['tree']['rules']}\n```")}),
+                mo.md(
+                    "### What the model thinks\n"
+                    "It learned from your most important songs: it tells what makes an important song "
+                    "emotional, so suggestions stay among the 250 most important."
+                ),
+                mo.ui.tabs(
+                    {
+                        "Suggested, not answered yet": mo.ui.table(_suggested, selection=None, page_size=10),
+                        "Your no it calls emotional": mo.ui.table(_surprise_no, selection=None, page_size=10),
+                        "Your yes it doesn't get": mo.ui.table(_surprise_yes, selection=None, page_size=10),
+                    }
+                ),
+            ]
+        )
+
+    _emo_view(emo_result)
     return
 
 

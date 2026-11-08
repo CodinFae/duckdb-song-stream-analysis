@@ -51,5 +51,12 @@ SET VARIABLE album_weight_sessions = 0.4;
 SET VARIABLE album_weight_recurrence = 0.3;
 SET VARIABLE album_weight_depth = 0.3;
 
+-- song_features: every metric we can think of, to find which ones describe an emotional song --
+SET VARIABLE features_min_plays = 10;          -- songs with fewer plays are left out
+SET VARIABLE features_comeback_gap_days = 180; -- a return after this long a silence is a comeback
+SET VARIABLE features_early_days = 30;         -- "early" plays: in the first N days with the song
+SET VARIABLE features_session_gap_minutes = 30; -- a listening session ends after this long a pause
+SET VARIABLE local_timezone = 'Europe/Zurich'; -- for hours and weekdays (99% of plays are in CH)
+
 -- song_profile: a song is "strong" in a dimension when it's in that mart's top N -------------
 SET VARIABLE profile_top_n = 100;

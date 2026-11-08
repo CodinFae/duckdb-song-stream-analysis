@@ -5,3 +5,4 @@
 .read src/mart/work.sql
 .read src/mart/album.sql
 .read src/mart/song_profile.sql
+.read src/mart/song_features.sql

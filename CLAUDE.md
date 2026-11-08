@@ -10,7 +10,8 @@ just build               # rebuild spotify.duckdb from data/*.json (run.sql: par
 just report <mart>       # top 20 of a mart (reports/<mart>.sql); `just reports` for all
 just top25               # out/top25.md: top 25 of each song dimension with context, for analysis
 just story               # out/story.html: the story page
-just explore             # marimo explorer app (song cards, tuning, 3D, pairwise judge)
+just explore             # marimo explorer app (song cards, tuning, 3D, pairwise judge, emotional labelling)
+just emotional           # text report: which metrics separate the songs you labelled emotional
 just shell               # DuckDB shell
 ```
 
@@ -24,6 +25,11 @@ Timestamps are TIMESTAMPTZ: cast to DATE in SQL before fetching in Python (no py
 - `src/int_song.sql`: identity. `song_id` = one work by one artist (merges releases, remasters, edits, feat., source tags, romanizations; covers/live/remix/language versions stay separate). `work_id` = the composition across performers and versions. Manual fixes in `seeds/*.csv`.
 - `src/int_album_play.sql`: album sessions (3+ different tracks of an album in a row, <20 min gaps), and whether you started them.
 - `src/mart/*.sql`: one file per dimension (`int_` metrics, then `mart_` 0-1 score), plus `song_profile.sql`.
+- `src/mart/song_features.sql`: `mart_song_features`, 64 raw metrics per song (10+ plays), most used by no
+  dimension: candidates for reverse engineering. Each column's comment is `<group>: <meaning>`.
+- `emotional.py`: learns which features separate songs labelled emotional yes/no (`seeds/emotional.csv`, last
+  answer wins): AUC per feature with bootstrap intervals, L1 logistic + stability selection, depth-3 tree.
+  Labels start from the top 50 important songs, so it explains what makes an *important* song emotional.
 - `reports/`: report queries (not run by the build). `story.py`, `spotify_explorer.py`: the two front-ends.
 
 ## The dimensions (the user's own definitions)
@@ -50,7 +56,7 @@ The three song dimensions barely overlap: that is a finding, not a bug.
 
 ## Rules
 
-- **Privacy: the data stays local.** `data/`, `*.duckdb`, `out/`, `seeds/judgments.csv` are gitignored. No cloud services or published pages with listening data (Evidence Studio was rejected for this).
+- **Privacy: the data stays local.** `data/`, `*.duckdb`, `out/`, `seeds/judgments.csv`, `seeds/emotional.csv` are gitignored. No cloud services or published pages with listening data (Evidence Studio was rejected for this).
 - **Determinism**: break ties explicitly (`arg_max(x, row(plays, ...))`, `ORDER BY timestamp, event_id`). Two builds must be identical.
 - **Refactors must not change results**: snapshot the tables to parquet before, compare after (`EXCEPT ALL` both ways).
 - **Ranking changes**: show the before/after top 20 (moves, new, out) and let the user validate before committing.

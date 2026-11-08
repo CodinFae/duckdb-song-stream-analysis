@@ -4,3 +4,5 @@ data
 __marimo__
 seeds/judgments.csv
 out/
+seeds/emotional.csv
+__pycache__/
